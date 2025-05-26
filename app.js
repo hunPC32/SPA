@@ -1,10 +1,7 @@
-// Firebase beállítás
 
 import firebase from "firebase/app";
 import "firebase/auth";
 
-
-// 🔁 Saját Firebase configodat ide másold be:
 const firebaseConfig = {
   apiKey: "YOUR_API_KEY",
   authDomain: "YOUR_PROJECT.firebaseapp.com",
