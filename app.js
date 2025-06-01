@@ -1,25 +1,125 @@
 
 
+const mapWidth = 16;
+const mapHeight = 16;
+
 const mapData = {
-  minX: 1,
-  maxX: 14,
-  minY: 4,
-  maxY: 12,
-  blockedSpaces: {
-    "7x4": true,
-    "1x11": true,
-    "12x10": true,
-    "4x7": true,
-    "5x7": true,
-    "6x7": true,
-    "8x6": true,
-    "9x6": true,
-    "10x6": true,
-    "7x9": true,
-    "8x9": true,
-    "9x9": true,
-  },
+  minX: 0,
+  maxX: mapWidth,
+  minY: 0,
+  maxY: mapHeight,
+  blockedSpaces: {},
 };
+
+
+function drawMapTiles() {
+  console.log("Rajzolás indul", mapData.blockedSpaces);
+
+  const gameContainer = document.querySelector(".game-container");
+
+  // 🔁 Először töröljük az összes régi csempét
+  document.querySelectorAll(".Map_tile").forEach(tile => tile.remove());
+
+  // 🔁 Ezután új csempék hozzáadása a konténer LEGELEJÉRE
+  for (let y = mapData.minY; y < mapData.maxY; y++) {
+    for (let x = mapData.minX; x < mapData.maxX; x++) {
+      const tile = document.createElement("div");
+      tile.classList.add("Map_tile");
+
+      if (isSolid(x, y)) {
+        tile.classList.add("Map_blocked");
+      } else {
+        tile.classList.add("Map_walkable");
+      }
+
+      tile.style.left = (x * 16) + "px";
+      tile.style.top = (y * 16) + "px";
+
+      // ⬇️ Insert before first child so it's rendered at the bottom
+      gameContainer.insertBefore(tile, gameContainer.firstChild);
+    }
+  }
+}
+
+
+
+
+function generateRandomMap() {
+  const mapRef = firebase.database().ref("map");
+
+  mapRef.once("value").then((snapshot) => {
+  if (snapshot.exists()) {
+    mapData.blockedSpaces = snapshot.val();
+    drawMapTiles(); // ✔️ csak akkor fut, ha van térkép
+    } else {
+      // Még nincs, generálunk
+      const newBlocked = {};
+      for (let y = mapData.minY; y < mapData.maxY; y++) {
+        for (let x = mapData.minX; x < mapData.maxX; x++) {
+          const key = getKeyString(x, y);
+          if (Math.random() < 0.15) {
+            newBlocked[key] = true;
+          }
+        }
+      }
+
+      // Mentsd el a Firebase-be
+          mapRef.set(newBlocked);
+          mapData.blockedSpaces = newBlocked;
+          drawMapTiles(); // ✔️ csak akkor fut, ha új térkép generálódik
+    }
+  });
+}
+
+function regenerateMap() {
+  const mapRef = firebase.database().ref("map");
+  const mapVersionRef = firebase.database().ref("mapVersion");
+  const coinsRef = firebase.database().ref("coins");
+
+  const newBlocked = {};
+  for (let y = mapData.minY; y < mapData.maxY; y++) {
+    for (let x = mapData.minX; x < mapData.maxX; x++) {
+      const key = getKeyString(x, y);
+      if (Math.random() < 0.15) {
+        newBlocked[key] = true;
+      }
+    }
+  }
+
+  // 🔥 Térkép mentése + coinok törlése + map verzió növelés
+  Promise.all([
+    mapRef.set(newBlocked),
+    coinsRef.remove(), // ⬅️ minden coin törlése
+    mapVersionRef.transaction(current => (current || 0) + 1)
+  ]).then(() => {
+    mapData.blockedSpaces = newBlocked;
+
+    // Térkép újrarajzolása
+    document.querySelectorAll(".Map_tile").forEach(tile => tile.remove());
+    drawMapTiles();
+  });
+}
+
+
+function loadMapFromFirebase() {
+  const mapRef = firebase.database().ref("map");
+  mapRef.once("value").then(snapshot => {
+    if (snapshot.exists()) {
+      mapData.blockedSpaces = snapshot.val();
+
+      // töröljük az előző térképcsempéket
+      document.querySelectorAll(".Map_tile").forEach(tile => tile.remove());
+
+      drawMapTiles();
+    }
+  });
+}
+
+
+
+
+
+
 
 // Options for Player Colors... these are in the same order as our sprite sheet
 const playerColors = ["blue", "red", "orange", "yellow", "green", "purple"];
@@ -84,37 +184,40 @@ function isSolid(x,y) {
   )
 }
 
-function getRandomSafeSpot() {
-  //We don't look things up by key here, so just return an x/y
-  return randomFromArray([
-    { x: 1, y: 4 },
-    { x: 2, y: 4 },
-    { x: 1, y: 5 },
-    { x: 2, y: 6 },
-    { x: 2, y: 8 },
-    { x: 2, y: 9 },
-    { x: 4, y: 8 },
-    { x: 5, y: 5 },
-    { x: 5, y: 8 },
-    { x: 5, y: 10 },
-    { x: 5, y: 11 },
-    { x: 11, y: 7 },
-    { x: 12, y: 7 },
-    { x: 13, y: 7 },
-    { x: 13, y: 6 },
-    { x: 13, y: 8 },
-    { x: 7, y: 6 },
-    { x: 7, y: 7 },
-    { x: 7, y: 8 },
-    { x: 8, y: 8 },
-    { x: 10, y: 8 },
-    { x: 8, y: 8 },
-    { x: 11, y: 4 },
-  ]);
+function getAllSafeSpots() {
+  return [
+    { x: 1, y: 4 }, { x: 2, y: 4 }, { x: 1, y: 5 }, { x: 2, y: 6 },
+    { x: 2, y: 8 }, { x: 2, y: 9 }, { x: 4, y: 8 }, { x: 5, y: 5 },
+    { x: 5, y: 8 }, { x: 5, y: 10 }, { x: 5, y: 11 }, { x: 11, y: 7 },
+    { x: 12, y: 7 }, { x: 13, y: 7 }, { x: 13, y: 6 }, { x: 13, y: 8 },
+    { x: 7, y: 6 }, { x: 7, y: 7 }, { x: 7, y: 8 }, { x: 8, y: 8 },
+    { x: 10, y: 8 }, { x: 11, y: 4 }
+  ];
 }
 
 
+function getRandomSafeSpot() {
+  const candidates = [];
+
+  for (let y = mapData.minY; y < mapData.maxY; y++) {
+    for (let x = mapData.minX; x < mapData.maxX; x++) {
+      const key = getKeyString(x, y);
+      if (!mapData.blockedSpaces[key]) {
+        candidates.push({ x, y });
+      }
+    }
+  }
+
+  return randomFromArray(candidates);
+}
+
+
+
+
 (function () {
+
+  let canMove = true;
+  let movementDelay = 500; // alapértelmezett mozgási késleltetés
 
   let playerId;
   let playerRef;
@@ -129,30 +232,47 @@ function getRandomSafeSpot() {
 
 
   function placeCoin() {
-    const { x, y } = getRandomSafeSpot();
-    const coinRef = firebase.database().ref(`coins/${getKeyString(x, y)}`);
-    coinRef.set({
-      x,
-      y,
-    })
+  console.log("🎯 placeCoin meghívva");
+  const { x, y } = getRandomSafeSpot();
+  const coinId = firebase.database().ref().push().key;
+  firebase.database().ref(`coins/${coinId}`).set({ id: coinId, x, y });
 
-    const coinTimeouts = [8000, 12000, 16000, 20000];
+  const coinTimeouts = [8000, 12000, 16000, 20000];
+  setTimeout(() => {
+    placeCoin();
+  }, randomFromArray(coinTimeouts));
+}
 
-    setTimeout(() => {
-      placeCoin();
-    }, randomFromArray(coinTimeouts));
-  }
 
   function attemptGrabCoin(x, y) {
-    const key = getKeyString(x, y);
-    if (coins[key]) {
-      // Remove this key from data, then uptick Player's coin count
-      firebase.database().ref(`coins/${key}`).remove();
-      playerRef.update({
-        coins: players[playerId].coins + 1,
-      })
-    }
+  const foundKey = Object.keys(coins).find(key => {
+  const coin = coins[key];
+  return coin.x === x && coin.y === y;
+});
+
+if (foundKey) {
+  firebase.database().ref(`coins/${foundKey}`).remove();
+
+
+    const currentCoins = players[playerId]?.coins ?? 0;
+    playerRef.update({
+      coins: currentCoins + 1,
+    });
+
+    // ⏩ Power-up: gyors mozgás 5 másodpercig
+    movementDelay = 50;
+
+    const statsDiv = document.getElementById("player-stats");
+    if (statsDiv) statsDiv.style.color = "lime";
+
+    setTimeout(() => {
+      movementDelay = 500;
+      if (statsDiv) statsDiv.style.color = "";
+    }, 2000);
   }
+}
+
+
 
 
   function handleArrowPress(xChange=0, yChange=0) {
@@ -180,17 +300,76 @@ function getRandomSafeSpot() {
     }
   }
 
+ 
+
   function initGame() {
 
-    new KeyPressListener("ArrowUp", () => handleArrowPress(0, -1))
-    new KeyPressListener("ArrowDown", () => handleArrowPress(0, 1))
-    new KeyPressListener("ArrowLeft", () => handleArrowPress(-1, 0))
-    new KeyPressListener("ArrowRight", () => handleArrowPress(1, 0))
+
+    placeCoin();
+    generateRandomMap();
+
+    let currentMapVersion = null;
+
+    const mapVersionRef = firebase.database().ref("mapVersion");
+
+
+
+
+
+    mapVersionRef.on("value", (snapshot) => {
+      const newVersion = snapshot.val();
+      if (newVersion !== currentMapVersion) {
+        currentMapVersion = newVersion;
+        loadMapFromFirebase(); // betölti az aktuális térképet
+      }
+    });
+
+    let killsSinceLastMap = 0;
+
+
+    
+
+document.addEventListener("keydown", (e) => {
+  if (e.repeat) return; // ne reagáljon folyamatos nyomásra
+  switch (e.key) {
+    case "ArrowUp": delayedArrowPress(0, -1); break;
+    case "ArrowDown": delayedArrowPress(0, 1); break;
+    case "ArrowLeft": delayedArrowPress(-1, 0); break;
+    case "ArrowRight": delayedArrowPress(1, 0); break;
+  }
+});
+
+
+
+function delayedArrowPress(x, y) {
+  if (!canMove) return;
+  canMove = false;
+  handleArrowPress(x, y);
+  setTimeout(() => {
+    canMove = true;
+  }, movementDelay); // ⬅️ ezt használja!
+}
+
+
+
+
 
     const allPlayersRef = firebase.database().ref(`players`);
     const allCoinsRef = firebase.database().ref(`coins`);
 
     allPlayersRef.on("value", (snapshot) => {
+      // Csak az első játékos indítja el a coin-spawn ciklust
+      firebase.database().ref("coinSpawner").transaction(current => {
+        if (current === true) return; // már fut
+        return true; // beállítjuk, hogy elindult
+      }).then((result) => {
+        if (result.committed && result.snapshot.val() === true) {
+          setTimeout(() => {
+            placeCoin(); // csak egyszer hívjuk meg
+          }, 10000); // 10 másodperc múlva indul az első coin
+        }
+      });
+
       //Fires whenever a change occurs
       players = snapshot.val() || {};
       Object.keys(players).forEach((key) => {
@@ -226,7 +405,7 @@ function getRandomSafeSpot() {
       }
 
       const overlay = document.getElementById("respawn-overlay");
-const counter = document.getElementById("respawn-counter");
+      const counter = document.getElementById("respawn-counter");
 
 if (players[playerId]?.dead) {
   overlay.classList.remove("hidden");
@@ -342,8 +521,13 @@ if (players[playerId]?.dead) {
       })
     })
 
+
+
+
+
+
     //Place my first coin
-    placeCoin();
+
 
     const allBulletsRef = firebase.database().ref("bullets");
 const bulletElements = {};
@@ -382,19 +566,30 @@ allBulletsRef.on("child_added", (snapshot) => {
 
             let newHp = (p.hp ?? 100) - 50;
             if (newHp <= 0) {
-              targetRef.update({ dead: true });
-              const attackerKills = players[bullet.owner]?.kills ?? 0;
-              attackerRef.update({ kills: attackerKills + 1 });
-              setTimeout(() => {
-                const { x: respawnX, y: respawnY } = getRandomSafeSpot();
-                targetRef.update({
-                  x: respawnX,
-                  y: respawnY,
-                  hp: 100,
-                  dead: null,
-                });
-              }, 5000);
-            } else {
+            targetRef.update({ dead: true });
+            const attackerKills = players[bullet.owner]?.kills ?? 0;
+            const newKillCount = attackerKills + 1;
+            attackerRef.update({ kills: newKillCount });
+
+            // ÚJ: kill számláló növelése és ellenőrzés
+            if (bullet.owner === playerId) {
+              killsSinceLastMap++;
+              if (killsSinceLastMap >= 3) {
+                killsSinceLastMap = 0;
+                regenerateMap();
+              }
+            }
+
+            setTimeout(() => {
+              const { x: respawnX, y: respawnY } = getRandomSafeSpot();
+              targetRef.update({
+                x: respawnX,
+                y: respawnY,
+                hp: 100,
+                dead: null,
+              });
+            }, 5000);
+          }else {
               targetRef.update({ hp: newHp });
             }
 
@@ -421,41 +616,54 @@ allBulletsRef.on("child_removed", (snapshot) => {
   }
 
   firebase.auth().onAuthStateChanged((user) => {
-    console.log(user)
-    if (user) {
-      //You're logged in!
-      playerId = user.uid;
-      playerRef = firebase.database().ref(`players/${playerId}`);
+  if (user) {
+    playerId = user.uid;
+    playerRef = firebase.database().ref(`players/${playerId}`);
 
-      const name = createName();
-      playerNameInput.value = name;
-
-      const {x, y} = getRandomSafeSpot();
-
-
-      playerRef.set({
-        id: playerId,
-        name,
-        direction: "right",
-        color: randomFromArray(playerColors),
-        x,
-        y,
-        coins: 0,
-        hp: 100,
-        kills: 0,
-      });
+    let name = "";
+  while (!name) {
+  name = prompt("Mi legyen a neved? (pl: SUPER CAT)").trim();
+}
+playerNameInput.value = name;
 
 
+    const { x, y } = getRandomSafeSpot();
 
-      //Remove me from Firebase when I diconnect
-      playerRef.onDisconnect().remove();
+    playerRef.set({
+      id: playerId,
+      name,
+      direction: "right",
+      color: randomFromArray(playerColors),
+      x,
+      y,
+      coins: 0,
+      hp: 100,
+      kills: 0,
+    });
 
-      //Begin the game now that we are signed in
-      initGame();
-    } else {
-      //You're logged out.
-    }
-  })
+    playerRef.onDisconnect().remove();
+
+    // ⏯️ A játék elindítása
+    initGame();
+
+    // ✅ CSAK az első játékos indítja el a coin spawn-t
+    firebase.database().ref("coinSpawner").transaction(current => {
+      if (current === true) return; // már fut
+      return true;
+    }).then((result) => {
+      if (result.committed && result.snapshot.val() === true) {
+        console.log("🟢 Coin spawn elindítva az első játékos által");
+        setTimeout(() => {
+          placeCoin(); // csak egyszer, és folytatja magát
+        }, 10000); // 10 másodperc késleltetéssel indul
+      }
+    });
+
+  } else {
+    // Felhasználó nincs bejelentkezve
+  }
+});
+
 
   firebase.auth().signInAnonymously().catch((error) => {
     var errorCode = error.code;
