@@ -308,6 +308,23 @@ if (foundKey) {
     placeCoin();
     generateRandomMap();
 
+    // Ranglista panel létrehozása a bal oldalon
+const leaderboard = document.createElement("div");
+leaderboard.id = "leaderboard";
+leaderboard.style.position = "absolute";
+leaderboard.style.left = "10px";
+leaderboard.style.top = "60px";
+leaderboard.style.background = "rgba(0,0,0,0.7)";
+leaderboard.style.color = "white";
+leaderboard.style.padding = "10px";
+leaderboard.style.borderRadius = "8px";
+leaderboard.style.fontFamily = "monospace";
+leaderboard.style.fontSize = "14px";
+leaderboard.style.maxWidth = "160px";
+leaderboard.style.zIndex = 1000;
+document.body.appendChild(leaderboard);
+
+
     let currentMapVersion = null;
 
     const mapVersionRef = firebase.database().ref("mapVersion");
@@ -358,77 +375,67 @@ function delayedArrowPress(x, y) {
     const allCoinsRef = firebase.database().ref(`coins`);
 
     allPlayersRef.on("value", (snapshot) => {
-      // Csak az első játékos indítja el a coin-spawn ciklust
-      firebase.database().ref("coinSpawner").transaction(current => {
-        if (current === true) return; // már fut
-        return true; // beállítjuk, hogy elindult
-      }).then((result) => {
-        if (result.committed && result.snapshot.val() === true) {
-          setTimeout(() => {
-            placeCoin(); // csak egyszer hívjuk meg
-          }, 10000); // 10 másodperc múlva indul az első coin
-        }
-      });
+  players = snapshot.val() || {};
 
-      //Fires whenever a change occurs
-      players = snapshot.val() || {};
-      Object.keys(players).forEach((key) => {
-        const characterState = players[key];
-        let el = playerElements[key];
-        // Now update the DOM
-        el.querySelector(".Character_name").innerText = characterState.name;
-        el.querySelector(".Character_name").innerText = characterState.name;
+  // 🔁 Ranglista frissítése kill szerint csökkenő sorrendben
+  const sortedPlayers = Object.values(players).sort((a, b) => (b.kills ?? 0) - (a.kills ?? 0));
+  leaderboard.innerHTML = "<strong>🏆 Ranglista</strong><br><br>" + sortedPlayers.map(p =>
+    `${p.name || "NÉVTELEN"} - ☠️ ${p.kills ?? 0}`
+  ).join("<br>");
 
-        const myPlayer = players[playerId];
-        if (myPlayer) {
-          const statsDiv = document.getElementById("player-stats");
-          statsDiv.innerText = `${myPlayer.coins} 💰 | ${myPlayer.hp ?? 100} ❤️ | ${myPlayer.kills ?? 0} ☠️`;
-        }
+  Object.keys(players).forEach((key) => {
+    const characterState = players[key];
+    let el = playerElements[key];
 
+    // Ha még nincs karakter DOM elem, ne menj tovább
+    if (!el) return;
 
+    // Karakter DOM frissítése
+    el.querySelector(".Character_name").innerText = characterState.name;
+    el.setAttribute("data-color", characterState.color);
+    el.setAttribute("data-direction", characterState.direction);
 
-        el.setAttribute("data-color", characterState.color);
-        el.setAttribute("data-direction", characterState.direction);
+    const left = 16 * characterState.x + "px";
+    const top = 16 * characterState.y + 4 + "px";
+    el.style.transform = `translate3d(${left}, ${top}, 0)`;
 
-        const left = 16 * characterState.x + "px";
-        const top = 16 * characterState.y + 4 + "px";
-        
-        el.style.transform = `translate3d(${left}, ${top}, 0)`;
-
-        if (characterState.dead) {
-        el.style.display = "none";
-        } else {
-        el.style.display = "block";
-        const left = 16 * characterState.x + "px";
-        const top = 16 * characterState.y + 4 + "px";
-        el.style.transform = `translate3d(${left}, ${top}, 0)`;
-      }
-
-      const overlay = document.getElementById("respawn-overlay");
-      const counter = document.getElementById("respawn-counter");
-
-if (players[playerId]?.dead) {
-  overlay.classList.remove("hidden");
-
-  // Egyszerű visszaszámlálás 5→0
-  let remaining = 5;
-  counter.innerText = remaining;
-
-  const countdown = setInterval(() => {
-    remaining--;
-    counter.innerText = remaining;
-    if (remaining <= 0 || !players[playerId]?.dead) {
-      clearInterval(countdown);
-      overlay.classList.add("hidden");
+    if (characterState.dead) {
+      el.style.display = "none";
+    } else {
+      el.style.display = "block";
     }
-  }, 1000);
-} else {
-  overlay.classList.add("hidden");
-}
+
+    // Saját játékos statisztika
+    if (key === playerId) {
+      const statsDiv = document.getElementById("player-stats");
+      statsDiv.innerText = `${characterState.coins ?? 0} 💰 | ${characterState.hp ?? 100} ❤️ | ${characterState.kills ?? 0} ☠️`;
+    }
+  });
+
+  // 🧟‍♂️ Újraéledés UI
+  const overlay = document.getElementById("respawn-overlay");
+  const counter = document.getElementById("respawn-counter");
+
+  if (players[playerId]?.dead) {
+    overlay.classList.remove("hidden");
+
+    let remaining = 5;
+    counter.innerText = remaining;
+
+    const countdown = setInterval(() => {
+      remaining--;
+      counter.innerText = remaining;
+      if (remaining <= 0 || !players[playerId]?.dead) {
+        clearInterval(countdown);
+        overlay.classList.add("hidden");
+      }
+    }, 1000);
+  } else {
+    overlay.classList.add("hidden");
+  }
+});
 
 
-      })
-    })
     allPlayersRef.on("child_added", (snapshot) => {
       //Fires whenever a new node is added the tree
       const addedPlayer = snapshot.val();
@@ -615,54 +622,65 @@ allBulletsRef.on("child_removed", (snapshot) => {
 
   }
 
-  firebase.auth().onAuthStateChanged((user) => {
+firebase.auth().onAuthStateChanged((user) => {
   if (user) {
     playerId = user.uid;
     playerRef = firebase.database().ref(`players/${playerId}`);
 
-    let name = "";
-  while (!name) {
-  name = prompt("Mi legyen a neved? (pl: SUPER CAT)").trim();
-}
-playerNameInput.value = name;
+    const nameInput = document.querySelector("#player-name");
 
+    nameInput.focus(); // Automatikusan fókuszál
+    nameInput.value = ""; // Törli az esetleges előző értéket
 
-    const { x, y } = getRandomSafeSpot();
+    // Csak egyszer figyelünk rá
+    const onNameEntered = () => {
+      const name = nameInput.value.trim();
+      if (name) {
+        nameInput.removeEventListener("keydown", keyHandler);
+        nameInput.readOnly = true; // Ne lehessen utána módosítani
 
-    playerRef.set({
-      id: playerId,
-      name,
-      direction: "right",
-      color: randomFromArray(playerColors),
-      x,
-      y,
-      coins: 0,
-      hp: 100,
-      kills: 0,
-    });
+        const { x, y } = getRandomSafeSpot();
 
-    playerRef.onDisconnect().remove();
+        playerRef.set({
+          id: playerId,
+          name,
+          direction: "right",
+          color: randomFromArray(playerColors),
+          x,
+          y,
+          coins: 0,
+          hp: 100,
+          kills: 0,
+        });
 
-    // ⏯️ A játék elindítása
-    initGame();
+        playerRef.onDisconnect().remove();
+        initGame();
 
-    // ✅ CSAK az első játékos indítja el a coin spawn-t
-    firebase.database().ref("coinSpawner").transaction(current => {
-      if (current === true) return; // már fut
-      return true;
-    }).then((result) => {
-      if (result.committed && result.snapshot.val() === true) {
-        console.log("🟢 Coin spawn elindítva az első játékos által");
-        setTimeout(() => {
-          placeCoin(); // csak egyszer, és folytatja magát
-        }, 10000); // 10 másodperc késleltetéssel indul
+        // CSAK első játékos indítja a coin spawner-t
+        firebase.database().ref("coinSpawner").transaction(current => {
+          if (current === true) return;
+          return true;
+        }).then((result) => {
+          if (result.committed && result.snapshot.val() === true) {
+            console.log("🟢 Coin spawn elindítva az első játékos által");
+            setTimeout(() => {
+              placeCoin();
+            }, 10000);
+          }
+        });
       }
-    });
+    };
 
-  } else {
-    // Felhasználó nincs bejelentkezve
+    const keyHandler = (e) => {
+      if (e.key === "Enter") {
+        onNameEntered();
+      }
+    };
+
+    nameInput.addEventListener("keydown", keyHandler);
   }
 });
+
 
 
   firebase.auth().signInAnonymously().catch((error) => {

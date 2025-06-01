@@ -222,4 +222,17 @@ button:active {
   background-color: #4cc9f0; /* kék járható */
 }
 
-
+#leaderboard {
+  position: absolute;
+  left: 10px;
+  margin-top: 20%;
+  transform: translateY(-50%);
+  background-color: rgba(0, 0, 0, 0.5);
+  color: white;
+  padding: 10px 14px;
+  border-radius: 8px;
+  font-size: 14px;
+  line-height: 1.6;
+  max-width: 180px;
+  z-index: 10;
+}
