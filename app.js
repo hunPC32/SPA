@@ -3,6 +3,11 @@
 const mapWidth = 16;
 const mapHeight = 16;
 
+const winOverlay = document.createElement("div");
+winOverlay.id = "win-overlay";
+document.body.appendChild(winOverlay);
+
+
 const mapData = {
   minX: 0,
   maxX: mapWidth,
@@ -211,6 +216,20 @@ function getRandomSafeSpot() {
   return randomFromArray(candidates);
 }
 
+
+function resetAllKills() {
+  const allPlayersRef = firebase.database().ref("players");
+  allPlayersRef.once("value").then(snapshot => {
+    snapshot.forEach(child => {
+      child.ref.update({
+        kills: 0,
+        coins: 0,
+        hp: 100,
+        dead: null,
+      });
+    });
+  });
+}
 
 
 
@@ -575,8 +594,16 @@ allBulletsRef.on("child_added", (snapshot) => {
             if (newHp <= 0) {
             targetRef.update({ dead: true });
             const attackerKills = players[bullet.owner]?.kills ?? 0;
+
             const newKillCount = attackerKills + 1;
             attackerRef.update({ kills: newKillCount });
+
+            if (newKillCount >= 10) {
+              firebase.database().ref("gameWinner").set(players[bullet.owner].name);
+            }
+
+
+
 
             // ÚJ: kill számláló növelése és ellenőrzés
             if (bullet.owner === playerId) {
@@ -619,6 +646,51 @@ allBulletsRef.on("child_removed", (snapshot) => {
   }
 });
 
+
+firebase.database().ref("gameWinner").on("value", (snapshot) => {
+  const winnerName = snapshot.val();
+  if (!winnerName) return;
+
+  const winOverlay = document.createElement("div");
+  winOverlay.style.position = "fixed";
+  winOverlay.style.top = 0;
+  winOverlay.style.left = 0;
+  winOverlay.style.width = "100%";
+  winOverlay.style.height = "100%";
+  winOverlay.style.backgroundColor = "rgba(0, 0, 0, 0.9)";
+  winOverlay.style.color = "white";
+  winOverlay.style.fontSize = "36px";
+  winOverlay.style.display = "flex";
+  winOverlay.style.justifyContent = "center";
+  winOverlay.style.alignItems = "center";
+  winOverlay.style.zIndex = 10000;
+  winOverlay.innerText = `${winnerName} NYERT! 🎉`;
+
+  document.body.appendChild(winOverlay);
+
+  // Új kör 5 mp múlva
+  setTimeout(() => {
+    if (playerId === Object.keys(players)[0]) {
+      // Csak az első játékos indítsa újra
+      firebase.database().ref("players").once("value").then(snapshot => {
+        const updates = {};
+        snapshot.forEach(child => {
+          updates[`${child.key}/kills`] = 0;
+          updates[`${child.key}/coins`] = 0;
+          updates[`${child.key}/hp`] = 100;
+          updates[`${child.key}/dead`] = null;
+          const { x, y } = getRandomSafeSpot();
+          updates[`${child.key}/x`] = x;
+          updates[`${child.key}/y`] = y;
+        });
+        firebase.database().ref("players").update(updates);
+        regenerateMap();
+        firebase.database().ref("gameWinner").remove(); // overlay törlés
+      });
+    }
+    winOverlay.remove();
+  }, 5000);
+});
 
   }
 
